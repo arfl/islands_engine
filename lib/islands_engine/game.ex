@@ -17,6 +17,8 @@ defmodule IslandsEngine.Game do
   def position_island(game, player, key, row, col) when player in @players, do:
     GenServer.call(game, {:position_island, player, key, row, col})
 
+  def set_islands(game, player) when player in @players, do: GenServer.call(game, {:set_islands, player})
+
   # callbacks
   def init(name) do
     player1 = %{name: name, board: Board.new, guesses: Guesses.new}
@@ -60,6 +62,19 @@ defmodule IslandsEngine.Game do
       {:error, :overlapping_island} ->
         {:reply, {:error, :overlapping_islands}}
     end
+  end
+
+  def handle_call({:set_islands, player}, _from, state) do
+    board = player_board(state, player)
+    with {:ok, rules} <- Rules.check(state.rules, {:set_islands, player}),
+           true         <- Board.all_islands_positioned?(board)
+    do
+      state
+      |> update_rules(rules)
+      |> reply_success(:ok)
+    else
+    :error -> {:reply, :error, state}
+    false -> {:reply, {:error, :not_all_islands_positioned}, state} end
   end
 
   # private functions
