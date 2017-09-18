@@ -17,7 +17,11 @@ defmodule IslandsEngine.Game do
   def position_island(game, player, key, row, col) when player in @players, do:
     GenServer.call(game, {:position_island, player, key, row, col})
 
-  def set_islands(game, player) when player in @players, do: GenServer.call(game, {:set_islands, player})
+  def set_islands(game, player) when player in @players, do:
+    GenServer.call(game, {:set_islands, player})
+
+  def guess_coordinate(game, player, row, col) when player in @players, do:
+    GenServer.call(game, {:guess_coordinate, player, row, col})
 
   # callbacks
   def init(name) do
@@ -77,6 +81,30 @@ defmodule IslandsEngine.Game do
     false -> {:reply, {:error, :not_all_islands_positioned}, state} end
   end
 
+  def handle_call({:guess_coordinate, player_key, row, col}, _from, state_data) do
+    opponent_key = opponent(player_key)
+    opponent_board = player_board(state_data, opponent_key)
+    with {:ok, rules} <-
+      Rules.check(state_data.rules, {:guess_coordinate, player_key}),
+      {:ok, coordinate} <- Coordinate.new(row, col),
+      {hit_or_miss, forested_island, win_status, opponent_board} <-
+           Board.guess(opponent_board, coordinate),
+      {:ok, rules} <-
+        Rules.check(rules, {:win_check, win_status})
+    do
+      state_data
+      |> update_board(opponent_key, opponent_board)
+      |> update_guesses(player_key, hit_or_miss, coordinate)
+      |> update_rules(rules)
+      |> reply_success({hit_or_miss, forested_island, win_status})
+    else
+      :error ->
+        {:reply, :error, state_data}
+      {:error, :invalid_coordinate} ->
+        {:reply, {:error, :invalid_coordinate}, state_data}
+    end
+  end
+
   # private functions
   defp update_player2_name(state, name), do:
     put_in(state.player2.name, name)
@@ -92,6 +120,15 @@ defmodule IslandsEngine.Game do
 
   defp player_board(state, player) do
     state[player].board
+  end
+
+  defp opponent(:player1), do: :player2
+  defp opponent(:player2), do: :player1
+
+  defp update_guesses(state_data, player_key, hit_or_miss, coordinate) do
+    update_in(state_data[player_key].guesses, fn guesses ->
+      Guesses.add(guesses, hit_or_miss, coordinate)
+    end)
   end
 
 end
